@@ -1,0 +1,27 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-2m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  projectzomboid:
+    image: indifferentbroccoli/projectzomboid-server-docker
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    stop_grace_period: 30s
+    ports:
+      - "${GAME_PORT:-16261}:16261/udp"
+      - "${DIRECT_PORT:-16262}:16262/udp"
+      - "${STEAM_PORT:-27015}:27015/tcp"
+    volumes:
+      - ${CONTAINER_DIR}/server-files:/project-zomboid
+      - ${CONTAINER_DIR}/server-data:/project-zomboid-config
+    environment:
+      TZ: ${TZ}
+    mem_limit: ${MEM_LIMIT:-8g}
+    logging: *default-logging

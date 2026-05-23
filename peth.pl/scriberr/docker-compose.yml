@@ -1,0 +1,34 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  scriberr:
+    image: ghcr.io/rishikanthc/scriberr:latest
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - traefik
+    volumes:
+      - ${CONTAINER_DIR}/data:/app/data
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.scriberr.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.scriberr.entrypoints=websecure"
+      - "traefik.http.routers.scriberr.tls=true"
+      - "traefik.http.routers.scriberr.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.scriberr.service=scriberr-srv"
+      - "traefik.http.services.scriberr-srv.loadbalancer.server.port=8080"
+    logging: *default-logging
+
+networks:
+  traefik:
+    external: true

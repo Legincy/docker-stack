@@ -1,0 +1,50 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  traefik:
+    image: library/traefik:latest
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443/tcp"
+      - "0.0.0.0:443:443/udp"
+      - "0.0.0.0:9999:9999"
+      - "[::]:853:853"
+      - "[::]:80:80"
+      - "[::]:443:443/tcp"
+      - "[::]:443:443/udp"
+      - "[::]:9999:9999"
+    networks:
+      - traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CONTAINER_DIR}/traefik.yml:/traefik.yml:ro
+      - ${CONTAINER_DIR}/config:/etc/traefik/config:ro
+      - ${CONTAINER_DIR}/certificates:/var/certificates
+    environment:
+      TZ: ${TZ}
+      TRAEFIK_CERTIFICATESRESOLVERS_letsencrypt_ACME_EMAIL: ${ACME_MAIL}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.jupiter.peth.pl`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${DASHBOARD_USERNAME}:${DASHBOARD_PASSWORD}"
+      - "pl.peth.rustic.enable=true"
+      - "pl.peth.rustic.password=${RUSTIC_PASSWORD}"
+      - "pl.peth.rustic.home=${CONTAINER_DIR}"
+    logging: *default-logging
+
+networks:
+  traefik:
+    external: true

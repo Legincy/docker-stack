@@ -1,0 +1,93 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  gitea:
+    <<: *common
+    image: gitea/gitea:latest
+    container_name: ${SERVICE_NAME}-web
+    networks:
+      - traefik
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/gitea:/data
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      - db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.gitea.entrypoints=websecure"
+      - "traefik.http.routers.gitea.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.gitea.service=gitea-service"
+      - "traefik.http.services.gitea-service.loadbalancer.server.port=3000"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  db:
+    <<: *common
+    image: postgres:14
+    container_name: ${SERVICE_NAME}-db
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/postgres:/var/lib/postgresql/data
+    environment:
+      TZ: ${TZ}
+
+  db-backup:
+    <<: *common
+    image: tiredofit/db-backup:4.0.19
+    container_name: ${SERVICE_NAME}-db-backup
+    networks:
+      - default
+    depends_on:
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
+    environment:
+      TZ: ${TZ}
+      CONTAINER_ENABLE_MONITORING: "FALSE"
+      DEFAULT_LOG_LEVEL: "WARN"
+      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
+      BACKUP_JOB_CONCURRENCY: "1"
+      DEFAULT_CHECKSUM: "NONE"
+      DEFAULT_COMPRESSION: "NONE"
+      DEFAULT_BACKUP_INTERVAL: "1440"
+      DEFAULT_BACKUP_BEGIN: "0315"
+      DEFAULT_CLEANUP_TIME: "10080"
+      DB01_TYPE: "pgsql"
+      DB01_HOST: "db"
+      DB01_NAME: ${POSTGRES_DB}
+      DB01_USER: ${POSTGRES_USER}
+      DB01_PASS: ${POSTGRES_PASSWORD}
+
+  # runner:
+  #   <<: *common
+  #   image: gitea/act_runner:latest
+  #   container_name: ${SERVICE_NAME}-runner
+  #   depends_on:
+  #     - gitea
+  #   networks:
+  #     - default
+  #   volumes:
+  #     - ${CONTAINER_DIR}/act_runner:/data
+  #     - ${CONTAINER_DIR}/runner.yml:/runner.yml:ro
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   labels:
+  #     - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  traefik:
+    external: true

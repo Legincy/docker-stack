@@ -1,0 +1,23 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  ipv6nat:
+    image: robbertkl/ipv6nat
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    privileged: true
+    env_file:
+      - .env
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /lib/modules:/lib/modules:ro
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging: *default-logging

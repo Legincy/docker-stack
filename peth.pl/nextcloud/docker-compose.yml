@@ -1,0 +1,101 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  db:
+    <<: *common
+    image: mariadb:lts
+    container_name: ${SERVICE_NAME}-db
+    command: --transaction-isolation=READ-COMMITTED --log-bin=ROW --binlog-format=ROW
+    volumes:
+      - ${CONTAINER_DIR}/db:/var/lib/mysql
+    environment:
+      TZ: ${TZ}
+
+  redis:
+    <<: *common
+    image: redis:alpine
+    container_name: ${SERVICE_NAME}-redis
+    environment:
+      TZ: ${TZ}
+
+  app:
+    <<: *common
+    image: nextcloud
+    container_name: ${SERVICE_NAME}-app
+    networks:
+      - traefik
+      - default
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/html:/var/www/html
+      - ${CONTAINER_DIR}/php-custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.nextcloud.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud,nextcloud_redirect"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.nextcloud.headers.stsSeconds=155520011"
+      - "traefik.http.middlewares.nextcloud.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nextcloud.headers.stsPreload=true"
+      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.regex=/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.replacement=/remote.php/dav/"
+
+  cron:
+    <<: *common
+    image: nextcloud
+    container_name: ${SERVICE_NAME}-cron
+    entrypoint: /cron.sh
+    depends_on:
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/html:/var/www/html
+    environment:
+      TZ: ${TZ}
+
+  db-backup:
+    <<: *common
+    image: tiredofit/db-backup:4.0.19
+    container_name: ${SERVICE_NAME}-db-backup
+    depends_on:
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
+    environment:
+      TZ: ${TZ}
+      CONTAINER_ENABLE_MONITORING: "FALSE"
+      DEFAULT_LOG_LEVEL: "WARN"
+      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
+      BACKUP_JOB_CONCURRENCY: "1"
+      DEFAULT_CHECKSUM: "NONE"
+      DEFAULT_COMPRESSION: "NONE"
+      DEFAULT_BACKUP_INTERVAL: "1440"
+      DEFAULT_BACKUP_BEGIN: "0315"
+      DEFAULT_CLEANUP_TIME: "10080"
+      DB01_TYPE: "mariadb"
+      DB01_HOST: "db"
+      DB01_NAME: ${MYSQL_DATABASE}
+      DB01_USER: ${MYSQL_USER}
+      DB01_PASS: ${MYSQL_PASSWORD}
+
+networks:
+  traefik:
+    external: true

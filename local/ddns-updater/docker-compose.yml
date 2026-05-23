@@ -1,0 +1,24 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  ddns-updater:
+    image: qmcgaw/ddns-updater
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    ports:
+      - "${LISTENING_PORT:-8000}:8000"
+    volumes:
+      - ${CONTAINER_DIR}:/updater/data
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging: *default-logging

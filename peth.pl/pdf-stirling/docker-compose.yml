@@ -1,0 +1,35 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - traefik
+    volumes:
+      - ${CONTAINER_DIR}/trainingData:/usr/share/tessdata
+      - ${CONTAINER_DIR}/configs:/configs
+      - ${CONTAINER_DIR}/logs:/logs
+    environment:
+      TZ: ${TZ}
+      DOCKER_ENABLE_SECURITY: ${DOCKER_ENABLE_SECURITY:-false}
+      LANGS: ${LANGS:-de_DE}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stirling-pdf.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.stirling-pdf.entrypoints=websecure"
+      - "traefik.http.services.stirling-pdf.loadbalancer.server.port=8080"
+    logging: *default-logging
+
+networks:
+  traefik:
+    external: true

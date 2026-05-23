@@ -1,0 +1,56 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  logging: *default-logging
+
+services:
+  homeassistant:
+    <<: *common
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: ${SERVICE_NAME}-app
+    privileged: true
+    ports:
+      - "${HA_PORT:-8080}:8123"
+    volumes:
+      - ${CONTAINER_DIR}/config:/config
+    environment:
+      TZ: ${TZ}
+    networks:
+      home:
+        ipv4_address: ${HA_IP}
+      default:
+    depends_on:
+      - mqtt
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  mqtt:
+    <<: *common
+    image: eclipse-mosquitto
+    container_name: ${SERVICE_NAME}-mqtt
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
+    volumes:
+      - ${CONTAINER_DIR}/mqtt/config:/mosquitto/config:rw
+      - ${CONTAINER_DIR}/mqtt/data:/mosquitto/data:rw
+      - ${CONTAINER_DIR}/mqtt/log:/mosquitto/log:rw
+    environment:
+      TZ: ${TZ}
+    networks:
+      home:
+        ipv4_address: ${MQTT_IP}
+      default:
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  home:
+    external: true

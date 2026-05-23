@@ -1,0 +1,113 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  broker:
+    <<: *common
+    image: redis:7
+    container_name: ${SERVICE_NAME}-redis
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/redis/data:/data
+    environment:
+      TZ: ${TZ}
+
+  db:
+    <<: *common
+    image: mariadb:11
+    container_name: ${SERVICE_NAME}-db
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/db:/var/lib/mysql
+    environment:
+      TZ: ${TZ}
+
+  webserver:
+    <<: *common
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: ${SERVICE_NAME}-app
+    networks:
+      - traefik
+      - default
+    depends_on:
+      - broker
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/paperless/data:/usr/src/paperless/data
+      - ${CONTAINER_DIR}/paperless/media:/usr/src/paperless/media
+      - ${CONTAINER_DIR}/paperless/export:/usr/src/paperless/export
+      - ${CONTAINER_DIR}/paperless/consume:/usr/src/paperless/consume
+    environment:
+      TZ: ${TZ}
+      PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+      PAPERLESS_SOCIALACCOUNT_PROVIDERS: >-
+        {
+          "openid_connect": {
+            "APPS": [{
+              "provider_id": "authentik",
+              "name": "Authentik",
+              "client_id": "${AUTHENTIK_CLIENT_ID}",
+              "secret": "${AUTHENTIK_CLIENT_SECRET}",
+              "settings": {
+                "server_url": "https://auth2.peth.pl/application/o/paperless/.well-known/openid-configuration"
+              }
+            }],
+            "OAUTH_PKCE_ENABLED": "True"
+          }
+        }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.paperless.entrypoints=websecure"
+      - "traefik.http.routers.paperless.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.paperless.service=paperless-srv"
+      - "traefik.http.services.paperless-srv.loadbalancer.server.port=8000"
+
+  db-backup:
+    <<: *common
+    image: tiredofit/db-backup:4.0.19
+    container_name: ${SERVICE_NAME}-db-backup
+    networks:
+      - default
+    depends_on:
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
+    environment:
+      TZ: ${TZ}
+      CONTAINER_ENABLE_MONITORING: "FALSE"
+      DEFAULT_LOG_LEVEL: "WARN"
+      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
+      BACKUP_JOB_CONCURRENCY: "1"
+      DEFAULT_CHECKSUM: "NONE"
+      DEFAULT_COMPRESSION: "NONE"
+      DEFAULT_BACKUP_INTERVAL: "1440"
+      DEFAULT_BACKUP_BEGIN: "0315"
+      DEFAULT_CLEANUP_TIME: "10080"
+      DB01_TYPE: "mariadb"
+      DB01_HOST: "db"
+      DB01_NAME: ${MYSQL_DATABASE}
+      DB01_USER: root
+      DB01_PASS: ${MYSQL_ROOT_PASSWORD}
+
+networks:
+  traefik:
+    external: true

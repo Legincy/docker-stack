@@ -1,0 +1,32 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  hytale:
+    image: deinfreu/hytale-server:experimental
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    ports:
+      - "${SERVER_PORT:-5520}:5520/udp"
+    volumes:
+      - ${CONTAINER_DIR}/data:/home/container
+      - /etc/machine-id:/etc/machine-id:ro
+    environment:
+      TZ: ${TZ}
+      SERVER_IP: "0.0.0.0"
+      SERVER_PORT: ${SERVER_PORT}
+      PROD: ${PROD:-FALSE}
+      DEBUG: ${DEBUG:-FALSE}
+    tty: true
+    stdin_open: true
+    logging: *default-logging

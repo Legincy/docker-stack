@@ -1,0 +1,30 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  samba:
+    image: dperson/samba
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    ports:
+      - "445:445"
+    volumes:
+      - /mnt/nvme1:/lxnvme1:rw
+      - ${CONTAINER_DIR}:/etc/samba:rw
+    environment:
+      TZ: ${TZ}
+      USERID: ${PUID}
+      GROUPID: ${PGID}
+      USER: ${SAMBA_USER};${SAMBA_PASS}
+      USER2: ${SAMBA_USER_JELLY};${SAMBA_PASS_JELLY}
+      SHARE: lxnvme1;/lxnvme1;yes;no;no;${SAMBA_USER}
+      SHARE2: jellyfin;/lxnvme1/Services/Jellyfin;yes;no;no;${SAMBA_USER_JELLY}
+      PERMISSIONS: "yes"
+    logging: *default-logging

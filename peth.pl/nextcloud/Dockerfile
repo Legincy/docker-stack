@@ -1,0 +1,5 @@
+FROM nextcloud:latest
+
+RUN apt-get update && apt-get install -y ffmpeg
+
+WORKDIR /var/www/html

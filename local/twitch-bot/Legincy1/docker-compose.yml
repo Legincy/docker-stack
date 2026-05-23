@@ -1,0 +1,23 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  twitch-drops-miner:
+    image: dungfu/twitch-drops-miner:latest
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    ports:
+      - "${WEB_PORT:-5801}:5800"
+    volumes:
+      - ${CONTAINER_DIR}/config:/TwitchDropsMiner/config
+      - ${CONTAINER_DIR}/cache:/TwitchDropsMiner/cache
+    environment:
+      TZ: ${TZ}
+    logging: *default-logging

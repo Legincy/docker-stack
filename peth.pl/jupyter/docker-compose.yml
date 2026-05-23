@@ -1,0 +1,33 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  jupyterhub:
+    build: .
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - traefik
+    volumes:
+      - ${CONTAINER_DIR}/data:/srv/jupyterhub
+      - ${CONTAINER_DIR}/user-data:/home
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jupyterhub.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.jupyterhub.entrypoints=websecure"
+      - "traefik.http.routers.jupyterhub.tls=true"
+      - "traefik.http.routers.jupyterhub.tls.certresolver=letsencrypt"
+    logging: *default-logging
+
+networks:
+  traefik:
+    external: true

@@ -1,0 +1,125 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  sharelatex:
+    <<: *common
+    image: tuetenk0pp/sharelatex-full
+    container_name: ${SERVICE_NAME}-app
+    stop_grace_period: 60s
+    networks:
+      - traefik
+      - default
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ${CONTAINER_DIR}/sharelatex:/var/lib/overleaf
+    environment:
+      TZ: ${TZ}
+      OVERLEAF_APP_NAME: "Overleaf Community Edition"
+      OVERLEAF_MONGO_URL: "mongodb://mongo/sharelatex"
+      OVERLEAF_REDIS_HOST: redis
+      REDIS_HOST: redis
+      ENABLED_LINKED_FILE_TYPES: "project_file,project_output_file"
+      ENABLE_CONVERSIONS: "true"
+      EMAIL_CONFIRMATION_DISABLED: "true"
+      OVERLEAF_SITE_URL: "https://${VIRTUAL_HOST}"
+      # SANDBOXED_COMPILES: "true"
+      # SANDBOXED_COMPILES_HOST_DIR_COMPILES: "${CONTAINER_DIR}/sharelatex/data/compiles"
+      # SANDBOXED_COMPILES_HOST_DIR_OUTPUT: "${CONTAINER_DIR}/sharelatex/data/output"
+      # DOCKER_RUNNER: "true"
+      # SANDBOXED_COMPILES_SIBLING_CONTAINERS: "true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.overleaf.entrypoints=websecure"
+      - "traefik.http.routers.overleaf.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.services.overleaf.loadbalancer.server.port=80"
+      
+  mongo:
+    <<: *common
+    image: mongo:8.0
+    container_name: ${SERVICE_NAME}-mongo
+    command: "--replSet overleaf"
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/mongo:/data/db
+    environment:
+      TZ: ${TZ}
+      MONGO_INITDB_DATABASE: sharelatex
+    extra_hosts:
+      - mongo:127.0.0.1
+    healthcheck:
+      test: echo 'db.stats().ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  mongoinit:
+    image: mongo:8.0
+    container_name: ${SERVICE_NAME}-mongoinit
+    restart: "no"
+    networks:
+      - default
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: [
+      "mongosh", "--host", "mongo:27017", "--eval",
+      "rs.initiate({ _id: 'overleaf', members: [ { _id: 0, host: 'mongo:27017' } ] })"
+    ]
+    logging: *default-logging
+
+  redis:
+    <<: *common
+    image: redis:6.2
+    container_name: ${SERVICE_NAME}-redis
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/redis:/data
+    environment:
+      TZ: ${TZ}
+
+  db-backup:
+    <<: *common
+    image: tiredofit/db-backup:4.0.19
+    container_name: ${SERVICE_NAME}-db-backup
+    networks:
+      - default
+    depends_on:
+      - mongo
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
+    environment:
+      TZ: ${TZ}
+      CONTAINER_ENABLE_MONITORING: "FALSE"
+      DEFAULT_LOG_LEVEL: "WARN"
+      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
+      BACKUP_JOB_CONCURRENCY: "1"
+      DEFAULT_CHECKSUM: "NONE"
+      DEFAULT_COMPRESSION: "NONE"
+      DEFAULT_BACKUP_INTERVAL: "1440"
+      DEFAULT_BACKUP_BEGIN: "0315"
+      DEFAULT_CLEANUP_TIME: "10080"
+      DB01_TYPE: "mongo"
+      DB01_HOST: "mongo"
+
+networks:
+  traefik:
+    external: true

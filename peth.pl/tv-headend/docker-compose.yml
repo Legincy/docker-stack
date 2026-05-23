@@ -1,0 +1,24 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+services:
+  tvheadend:
+    image: lscr.io/linuxserver/tvheadend
+    container_name: ${SERVICE_NAME}
+    restart: ${RESTART_POLICY}
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    network_mode: host
+    volumes:
+      - ${CONTAINER_DIR}/config:/config
+      - ${CONTAINER_DIR}/recordings:/recordings
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    logging: *default-logging

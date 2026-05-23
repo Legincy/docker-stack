@@ -1,0 +1,102 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  immich-server:
+    <<: *common
+    image: ghcr.io/immich-app/immich-server:v2.4.1
+    container_name: ${SERVICE_NAME}-server
+    extends:
+      file: hwaccel.transcoding.yml
+      service: ${HWACCEL}
+    networks:
+      - traefik
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/immich:/usr/src/app/upload
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      - redis
+      - db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.immich.entrypoints=websecure"
+      - "traefik.http.routers.immich.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.immich.service=immich-srv"
+      - "traefik.http.services.immich-srv.loadbalancer.server.port=2283"
+
+  immich-machine-learning:
+    <<: *common
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: ${SERVICE_NAME}-ml
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/immich:/usr/src/app/upload
+      - ${CONTAINER_DIR}/model-cache:/cache
+    environment:
+      TZ: ${TZ}
+
+  redis:
+    <<: *common
+    image: redis:6.2
+    container_name: ${SERVICE_NAME}-redis
+    networks:
+      - default
+    environment:
+      TZ: ${TZ}
+
+  db:
+    <<: *common
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0
+    container_name: ${SERVICE_NAME}-db
+    networks:
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/pgdata:/var/lib/postgresql/data
+    environment:
+      TZ: ${TZ}
+
+  db-backup:
+    <<: *common
+    image: tiredofit/db-backup:4.0.19
+    container_name: ${SERVICE_NAME}-db-backup
+    networks:
+      - default
+    depends_on:
+      - db
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
+    environment:
+      TZ: ${TZ}
+      CONTAINER_ENABLE_MONITORING: "FALSE"
+      DEFAULT_LOG_LEVEL: "WARN"
+      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
+      BACKUP_JOB_CONCURRENCY: "1"
+      DEFAULT_CHECKSUM: "NONE"
+      DEFAULT_COMPRESSION: "NONE"
+      DEFAULT_BACKUP_INTERVAL: "1440"
+      DEFAULT_BACKUP_BEGIN: "0315"
+      DEFAULT_CLEANUP_TIME: "10080"
+      DB01_TYPE: "pgsql"
+      DB01_HOST: "db"
+      DB01_NAME: ${POSTGRES_DB}
+      DB01_USER: ${POSTGRES_USER}
+      DB01_PASS: ${POSTGRES_PASSWORD}
+
+networks:
+  traefik:
+    external: true

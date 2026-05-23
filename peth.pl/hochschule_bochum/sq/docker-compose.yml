@@ -1,0 +1,58 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY}
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+services:
+  influx:
+    <<: *common
+    image: influxdb:latest
+    container_name: ${SERVICE_NAME}-influx
+    networks:
+      - traefik
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/influx/data:/var/lib/influxdb2
+      - ${CONTAINER_DIR}/influx/config:/etc/influxdb2
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.influx.entrypoints=websecure"
+      - "traefik.http.routers.influx.rule=Host(`${INFLUX_VIRTUAL_HOST}`)"
+      - "traefik.http.services.influx.loadbalancer.server.port=8086"
+
+  grafana:
+    <<: *common
+    image: grafana/grafana:latest
+    container_name: ${SERVICE_NAME}-grafana
+    user: "1000"
+    networks:
+      - traefik
+      - default
+    volumes:
+      - ${CONTAINER_DIR}/grafana:/var/lib/grafana
+    depends_on:
+      - influx
+    environment:
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_VIRTUAL_HOST}`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+networks:
+  traefik:
+    external: true
