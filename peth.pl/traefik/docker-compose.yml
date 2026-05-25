@@ -35,14 +35,11 @@ services:
       TRAEFIK_CERTIFICATESRESOLVERS_letsencrypt_ACME_EMAIL: ${ACME_MAIL}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.jupiter.peth.pl`)"
+      - "traefik.http.routers.traefik.rule=Host(`${VIRTUAL_HOST}`)"
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.middlewares=traefik-auth"
       - "traefik.http.middlewares.traefik-auth.basicauth.users=${DASHBOARD_USERNAME}:${DASHBOARD_PASSWORD}"
-      - "pl.peth.rustic.enable=true"
-      - "pl.peth.rustic.password=${RUSTIC_PASSWORD}"
-      - "pl.peth.rustic.home=${CONTAINER_DIR}"
     logging: *default-logging
 
 networks:
