@@ -1,0 +1,64 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - traefik
+  logging: *default-logging
+
+services:
+  headscale:
+    <<: *common
+    container_name: ${SERVICE_NAME}-server
+    image: ghcr.io/juanfont/headscale:${HEADSCALE_VERSION:-0.29.4}
+    command: serve
+    ports:
+      - "3478:3478/udp"
+    volumes:
+      # Headscale liest die Config nur, Headplane schreibt sie
+      - ${CONTAINER_DIR}/config:/etc/headscale:ro
+      - ${CONTAINER_DIR}/data:/var/lib/headscale
+    labels:
+      # Damit findet Headplane den Container für die Docker-Integration
+      - "me.tale.headplane.target=headscale"
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.${SERVICE_NAME}.priority=10"
+      - "traefik.http.routers.${SERVICE_NAME}.service=${SERVICE_NAME}-srv"
+      - "traefik.http.services.${SERVICE_NAME}-srv.loadbalancer.server.port=8080"
+
+  headplane:
+    <<: *common
+    container_name: ${SERVICE_NAME}-headplane
+    image: ghcr.io/tale/headplane:${HEADPLANE_VERSION:-0.7.0}
+    depends_on:
+      - headscale
+    volumes:
+      - ${CONTAINER_DIR}/headplane/config/config.yaml:/etc/headplane/config.yaml:ro
+      - ${CONTAINER_DIR}/headplane/data:/var/lib/headplane
+      # Schreibzugriff, damit Headplane Config/DNS/ACLs bearbeiten kann
+      - ${CONTAINER_DIR}/config:/etc/headscale
+      # Docker-Integration (Reload von Headscale nach Config-Änderungen).
+      # Achtung: Socket-Zugriff = effektiv Root auf dem Host, auch mit :ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.headplane.rule=Host(`${VIRTUAL_HOST}`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.headplane.service=headplane-srv"
+      - "traefik.http.services.headplane-srv.loadbalancer.server.port=3000"
+
+networks:
+  traefik:
+    external: true
