@@ -4,13 +4,21 @@ x-logging: &default-logging
     max-size: "${LOG_MAX_SIZE:-1m}"
     max-file: "${LOG_MAX_FILES:-3}"
 
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
 services:
   tailscale:
+    <<: *common
     image: jauderho/tailscale:latest
     container_name: ${SERVICE_NAME}
-    restart: ${RESTART_POLICY}
-    env_file:
-      - .env
     command: tailscaled
     cap_add:
       - NET_ADMIN
@@ -23,8 +31,5 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - ${CONTAINER_DIR}:/var/lib/tailscale
-    environment:
-      TZ: ${TZ}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-    logging: *default-logging

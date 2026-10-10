@@ -1,0 +1,155 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
+services:
+  gluetun:
+    <<: *common
+    image: qmcgaw/gluetun
+    container_name: ${SERVICE_NAME}-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "8080:8080"     # qBittorrent WebUI
+      - "8085:8085"     # SABnzbd WebUI
+      - "9696:9696"     # Prowlarr
+      - "5006:5006"     # Radarr
+      - "6881:6881"     # qBittorrent P2P
+      - "6881:6881/udp" # qBittorrent P2P (UDP)
+    volumes:
+      - ${CONTAINER_DIR}/gluetun:/gluetun
+    networks:
+      - media
+
+  qbittorrent:
+    <<: *common
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: ${SERVICE_NAME}-qbittorrent
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      WEBUI_PORT: "8080"
+    volumes:
+      - ${CONTAINER_DIR}/qbittorrent:/config
+      - /tank/media:/tank/media
+
+  sabnzbd:
+    <<: *common
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: ${SERVICE_NAME}-sabnzbd
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${CONTAINER_DIR}/sabnzbd:/config
+      - /tank/media:/tank/media
+
+  prowlarr:
+    <<: *common
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: ${SERVICE_NAME}-prowlarr
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${CONTAINER_DIR}/prowlarr:/config
+
+  radarr:
+    <<: *common
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: ${SERVICE_NAME}-radarr
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${CONTAINER_DIR}/radarr:/config
+      - /tank/media:/tank/media
+    ports:
+      - "7878:7878"
+    networks:
+      - media
+
+  sonarr:
+    <<: *common
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: ${SERVICE_NAME}-sonarr
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${CONTAINER_DIR}/sonarr:/config
+      - /tank/media:/tank/media
+    ports:
+      - "8989:8989"
+    networks:
+      - media
+
+  jellyseerr:
+    <<: *common
+    image: fallenbagel/jellyseerr:latest
+    container_name: ${SERVICE_NAME}-jellyseerr
+    volumes:
+      - ${CONTAINER_DIR}/jellyseerr:/app/config
+    ports:
+      - "5055:5055"
+    networks:
+      - media
+
+  flaresolverr:
+    <<: *common
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: ${SERVICE_NAME}-flaresolverr
+      LOG_LEVEL: info
+    ports:
+      - "8191:8191"
+    networks:
+      - media
+
+  umlautadaptarr:
+    <<: *common
+    image: pcjones/umlautadaptarr:latest
+    container_name: ${SERVICE_NAME}-umlautadaptarr
+    network_mode: "service:gluetun"
+    volumes:
+      - ${CONTAINER_DIR}/umlautadaptarr:/config
+
+  bazarr:
+    <<: *common
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: ${SERVICE_NAME}-bazarr
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ${CONTAINER_DIR}/bazarr:/config
+      - /tank/media:/tank/media
+    ports:
+      - "6767:6767"
+    networks:
+      - media
+
+networks:
+  media:

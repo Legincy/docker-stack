@@ -5,7 +5,9 @@ x-logging: &default-logging
     max-file: "${LOG_MAX_FILES:-3}"
 
 x-common: &common
-  restart: ${RESTART_POLICY}
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
   env_file:
     - .env
   security_opt:
@@ -13,51 +15,44 @@ x-common: &common
   logging: *default-logging
 
 services:
-  db:
+  mariadb:
     <<: *common
     image: mariadb:lts
-    container_name: ${SERVICE_NAME}-db
-    command: --transaction-isolation=READ-COMMITTED --log-bin=ROW --binlog-format=ROW
+    container_name: ${SERVICE_NAME}-mariadb
+    command: --transaction-isolation=READ-COMMITTED
     volumes:
-      - ${CONTAINER_DIR}/db:/var/lib/mysql
-    environment:
-      TZ: ${TZ}
+      - ${CONTAINER_DIR}/mariadb:/var/lib/mysql
 
   redis:
     <<: *common
     image: redis:alpine
     container_name: ${SERVICE_NAME}-redis
-    environment:
-      TZ: ${TZ}
 
-  app:
+  nextcloud:
     <<: *common
-    image: nextcloud
-    container_name: ${SERVICE_NAME}-app
+    image: nextcloud:35
+    container_name: ${SERVICE_NAME}-server
     networks:
       - traefik
       - default
     depends_on:
       - redis
-      - db
+      - mariadb
     volumes:
       - ${CONTAINER_DIR}/html:/var/www/html
       - ${CONTAINER_DIR}/php-custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini
-    environment:
-      TZ: ${TZ}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.nextcloud.rule=Host(`${VIRTUAL_HOST}`)"
-      - "traefik.http.routers.nextcloud.entrypoints=websecure"
-      - "traefik.http.routers.nextcloud.middlewares=nextcloud,nextcloud_redirect"
-      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
-      - "traefik.http.middlewares.nextcloud.headers.stsSeconds=155520011"
-      - "traefik.http.middlewares.nextcloud.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.nextcloud.headers.stsPreload=true"
-      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.permanent=true"
-      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.regex=/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud_redirect.redirectregex.replacement=/remote.php/dav/"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.${SERVICE_NAME}.middlewares=${SERVICE_NAME},${SERVICE_NAME}_redirect"
+      - "traefik.http.services.${SERVICE_NAME}.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.${SERVICE_NAME}.headers.stsSeconds=155520011"
+      - "traefik.http.middlewares.${SERVICE_NAME}.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.${SERVICE_NAME}.headers.stsPreload=true"
+      - "traefik.http.middlewares.${SERVICE_NAME}_redirect.redirectregex.permanent=true"
+      - "traefik.http.middlewares.${SERVICE_NAME}_redirect.redirectregex.regex=/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.${SERVICE_NAME}_redirect.redirectregex.replacement=/remote.php/dav/"
 
   cron:
     <<: *common
@@ -65,36 +60,19 @@ services:
     container_name: ${SERVICE_NAME}-cron
     entrypoint: /cron.sh
     depends_on:
-      - db
+      - mariadb
     volumes:
       - ${CONTAINER_DIR}/html:/var/www/html
-    environment:
-      TZ: ${TZ}
 
   db-backup:
     <<: *common
-    image: tiredofit/db-backup:4.0.19
+    image: nfrastack/db-backup:4.9.2
     container_name: ${SERVICE_NAME}-db-backup
+    init: false
     depends_on:
-      - db
+      - mariadb
     volumes:
       - ${CONTAINER_DIR}/db-backup:/backup
-    environment:
-      TZ: ${TZ}
-      CONTAINER_ENABLE_MONITORING: "FALSE"
-      DEFAULT_LOG_LEVEL: "WARN"
-      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
-      BACKUP_JOB_CONCURRENCY: "1"
-      DEFAULT_CHECKSUM: "NONE"
-      DEFAULT_COMPRESSION: "NONE"
-      DEFAULT_BACKUP_INTERVAL: "1440"
-      DEFAULT_BACKUP_BEGIN: "0315"
-      DEFAULT_CLEANUP_TIME: "10080"
-      DB01_TYPE: "mariadb"
-      DB01_HOST: "db"
-      DB01_NAME: ${MYSQL_DATABASE}
-      DB01_USER: ${MYSQL_USER}
-      DB01_PASS: ${MYSQL_PASSWORD}
 
 networks:
   traefik:

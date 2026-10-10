@@ -5,7 +5,9 @@ x-logging: &default-logging
     max-file: "${LOG_MAX_FILES:-3}"
 
 x-common: &common
-  restart: ${RESTART_POLICY}
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
   env_file:
     - .env
   logging: *default-logging
@@ -27,8 +29,6 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - ${CONTAINER_DIR}/tailscale:/var/lib/tailscale
-    environment:
-      TZ: ${TZ}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
@@ -49,8 +49,6 @@ services:
       - '--path.rootfs=/rootfs'
       - '--collector.filesystem.ignored-mount-points=^(/rootfs|/host|)/(sys|proc|dev|host|etc)($$|/)'
       - '--collector.filesystem.ignored-fs-types=^(sys|proc|auto|cgroup|devpts|ns|au|fuse\.lxc|mqueue)(fs|)$$'
-    environment:
-      TZ: ${TZ}
 
   cadvisor:
     <<: *common
@@ -64,5 +62,3 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-    environment:
-      TZ: ${TZ}

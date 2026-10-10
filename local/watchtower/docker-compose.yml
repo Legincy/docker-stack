@@ -4,20 +4,20 @@ x-logging: &default-logging
     max-size: "${LOG_MAX_SIZE:-1m}"
     max-file: "${LOG_MAX_FILES:-3}"
 
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
 services:
   watchtower:
+    <<: *common
     image: containrrr/watchtower
     container_name: ${SERVICE_NAME}
-    restart: ${RESTART_POLICY}
-    security_opt:
-      - no-new-privileges:true
-    env_file:
-      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      TZ: ${TZ}
-      WATCHTOWER_INTERVAL: ${WATCHTOWER_INTERVAL:-2628000}
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-    logging: *default-logging

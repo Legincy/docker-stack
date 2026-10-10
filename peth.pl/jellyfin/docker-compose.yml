@@ -4,18 +4,28 @@ x-logging: &default-logging
     max-size: "${LOG_MAX_SIZE:-1m}"
     max-file: "${LOG_MAX_FILES:-3}"
 
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
 services:
   jellyfin:
+    <<: *common
     image: jellyfin/jellyfin
-    container_name: ${SERVICE_NAME}
-    restart: ${RESTART_POLICY}
-    security_opt:
-      - no-new-privileges:true
-    env_file:
-      - .env
+    container_name: ${SERVICE_NAME}-server
     user: "1000:1000"
     networks:
       - traefik
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "993"
     ports:
       - "${HTTP_PORT:-8096}:8096/tcp"
       - "${DISCOVERY_PORT:-7359}:7359/udp"
@@ -23,29 +33,19 @@ services:
       - ${CONTAINER_DIR}/config:/config
       - ${CONTAINER_DIR}/cache:/cache
       - type: bind
-        source: ${CONTAINER_DIR}/media
-        target: /media
-      - type: bind
-        source: ${CONTAINER_DIR}/media2
-        target: /media2
-        read_only: true
-      - type: bind
         source: ${CONTAINER_DIR}/fonts
         target: /usr/local/share/fonts/custom
         read_only: true
-      - /mnt/nvme1/Services/Jellyfin/Movies:/movies:ro
-    environment:
-      TZ: ${TZ}
-      JELLYFIN_PublishedServerUrl: ${VIRTUAL_HOST}
+      - /tank/media:/tank/media:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jellyfin.rule=Host(`${VIRTUAL_HOST}`)"
-      - "traefik.http.routers.jellyfin.entrypoints=websecure"
-      - "traefik.http.routers.jellyfin.tls=true"
-      - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.jellyfin.service=jellyfin-srv"
-      - "traefik.http.services.jellyfin-srv.loadbalancer.server.port=8096"
-    logging: *default-logging
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.${SERVICE_NAME}.tls=true"
+      - "traefik.http.routers.${SERVICE_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${SERVICE_NAME}.service=${SERVICE_NAME}-srv"
+      - "traefik.http.services.${SERVICE_NAME}-srv.loadbalancer.server.port=8096"
+      - "traefik.http.routers.${SERVICE_NAME}.middlewares=secure-headers@file"
 
 networks:
   traefik:

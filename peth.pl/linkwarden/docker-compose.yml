@@ -5,7 +5,9 @@ x-logging: &default-logging
     max-file: "${LOG_MAX_FILES:-3}"
 
 x-common: &common
-  restart: ${RESTART_POLICY}
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
   env_file:
     - .env
   security_opt:
@@ -16,24 +18,21 @@ services:
   linkwarden:
     <<: *common
     image: ghcr.io/linkwarden/linkwarden:latest
-    container_name: ${SERVICE_NAME}-app
+    container_name: ${SERVICE_NAME}-server
     networks:
       - traefik
       - internal
     volumes:
       - ${CONTAINER_DIR}/data:/data/data
-    environment:
-      TZ: ${TZ}
-      DATABASE_URL: postgresql://linkwarden:${POSTGRES_PASSWORD}@postgres:5432/linkwarden
     depends_on:
       postgres:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.linkwarden.entrypoints=websecure"
-      - "traefik.http.routers.linkwarden.rule=Host(`${VIRTUAL_HOST}`)"
-      - "traefik.http.services.linkwarden.loadbalancer.server.port=3000"
+      - "traefik.http.routers.${SERVICE_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.services.${SERVICE_NAME}.loadbalancer.server.port=3000"
 
   postgres:
     <<: *common
@@ -43,16 +42,23 @@ services:
       - internal
     volumes:
       - ${CONTAINER_DIR}/pgdata:/var/lib/postgresql/data
-    environment:
-      TZ: ${TZ}
-      POSTGRES_USER: linkwarden
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: linkwarden
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U linkwarden"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  db-backup:
+    <<: *common
+    image: nfrastack/db-backup:4.9.2
+    container_name: ${SERVICE_NAME}-db-backup
+    init: false
+    networks:
+      - internal
+    depends_on:
+      - postgres
+    volumes:
+      - ${CONTAINER_DIR}/db-backup:/backup
 
 networks:
   traefik:

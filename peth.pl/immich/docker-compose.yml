@@ -5,7 +5,9 @@ x-logging: &default-logging
     max-file: "${LOG_MAX_FILES:-3}"
 
 x-common: &common
-  restart: ${RESTART_POLICY}
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
   env_file:
     - .env
   security_opt:
@@ -15,7 +17,7 @@ x-common: &common
 services:
   immich-server:
     <<: *common
-    image: ghcr.io/immich-app/immich-server:v2.4.1
+    image: ghcr.io/immich-app/immich-server:v2.7.5
     container_name: ${SERVICE_NAME}-server
     extends:
       file: hwaccel.transcoding.yml
@@ -25,30 +27,25 @@ services:
       - default
     volumes:
       - ${CONTAINER_DIR}/immich:/usr/src/app/upload
-    environment:
-      TZ: ${TZ}
     depends_on:
       - redis
       - db
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.immich.entrypoints=websecure"
-      - "traefik.http.routers.immich.rule=Host(`${VIRTUAL_HOST}`)"
-      - "traefik.http.routers.immich.service=immich-srv"
-      - "traefik.http.services.immich-srv.loadbalancer.server.port=2283"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.${SERVICE_NAME}.service=${SERVICE_NAME}-srv"
+      - "traefik.http.services.${SERVICE_NAME}-srv.loadbalancer.server.port=2283"
 
-  immich-machine-learning:
+  machine-learning:
     <<: *common
     image: ghcr.io/immich-app/immich-machine-learning:release
-    container_name: ${SERVICE_NAME}-ml
+    container_name: ${SERVICE_NAME}-machine-learning
     networks:
       - default
     volumes:
       - ${CONTAINER_DIR}/immich:/usr/src/app/upload
       - ${CONTAINER_DIR}/model-cache:/cache
-    environment:
-      TZ: ${TZ}
 
   redis:
     <<: *common
@@ -56,8 +53,6 @@ services:
     container_name: ${SERVICE_NAME}-redis
     networks:
       - default
-    environment:
-      TZ: ${TZ}
 
   db:
     <<: *common
@@ -67,35 +62,18 @@ services:
       - default
     volumes:
       - ${CONTAINER_DIR}/pgdata:/var/lib/postgresql/data
-    environment:
-      TZ: ${TZ}
 
   db-backup:
     <<: *common
-    image: tiredofit/db-backup:4.0.19
+    image: nfrastack/db-backup:4.9.2
     container_name: ${SERVICE_NAME}-db-backup
+    init: false
     networks:
       - default
     depends_on:
       - db
     volumes:
       - ${CONTAINER_DIR}/db-backup:/backup
-    environment:
-      TZ: ${TZ}
-      CONTAINER_ENABLE_MONITORING: "FALSE"
-      DEFAULT_LOG_LEVEL: "WARN"
-      DEFAULT_CREATE_LATEST_SYMLINK: "TRUE"
-      BACKUP_JOB_CONCURRENCY: "1"
-      DEFAULT_CHECKSUM: "NONE"
-      DEFAULT_COMPRESSION: "NONE"
-      DEFAULT_BACKUP_INTERVAL: "1440"
-      DEFAULT_BACKUP_BEGIN: "0315"
-      DEFAULT_CLEANUP_TIME: "10080"
-      DB01_TYPE: "pgsql"
-      DB01_HOST: "db"
-      DB01_NAME: ${POSTGRES_DB}
-      DB01_USER: ${POSTGRES_USER}
-      DB01_PASS: ${POSTGRES_PASSWORD}
 
 networks:
   traefik:

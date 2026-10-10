@@ -4,21 +4,26 @@ x-logging: &default-logging
     max-size: "${LOG_MAX_SIZE:-1m}"
     max-file: "${LOG_MAX_FILES:-3}"
 
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
 services:
   traefik:
+    <<: *common
     image: library/traefik:latest
-    container_name: ${SERVICE_NAME}
-    restart: ${RESTART_POLICY}
-    security_opt:
-      - no-new-privileges:true
-    env_file:
-      - .env
+    container_name: ${SERVICE_NAME}-server
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443/tcp"
       - "0.0.0.0:443:443/udp"
       - "0.0.0.0:9999:9999"
-      - "[::]:853:853"
       - "[::]:80:80"
       - "[::]:443:443/tcp"
       - "[::]:443:443/udp"
@@ -30,17 +35,13 @@ services:
       - ${CONTAINER_DIR}/traefik.yml:/traefik.yml:ro
       - ${CONTAINER_DIR}/config:/etc/traefik/config:ro
       - ${CONTAINER_DIR}/certificates:/var/certificates
-    environment:
-      TZ: ${TZ}
-      TRAEFIK_CERTIFICATESRESOLVERS_letsencrypt_ACME_EMAIL: ${ACME_MAIL}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`${VIRTUAL_HOST}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)"
+      - "traefik.http.routers.${SERVICE_NAME}.service=api@internal"
+      - "traefik.http.routers.${SERVICE_NAME}.middlewares=traefik-auth"
       - "traefik.http.middlewares.traefik-auth.basicauth.users=${DASHBOARD_USERNAME}:${DASHBOARD_PASSWORD}"
-    logging: *default-logging
 
 networks:
   traefik:

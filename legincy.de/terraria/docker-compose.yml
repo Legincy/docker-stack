@@ -4,22 +4,25 @@ x-logging: &default-logging
     max-size: "${LOG_MAX_SIZE:-1m}"
     max-file: "${LOG_MAX_FILES:-3}"
 
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+  env_file:
+    - .env
+
 services:
   tmodloader:
+    <<: *common
     image: jacobsmile/tmodloader1.4:latest
-    container_name: ${SERVICE_NAME}
-    restart: ${RESTART_POLICY}
-    security_opt:
-      - no-new-privileges:true
-    env_file:
-      - .env
+    container_name: ${SERVICE_NAME}-server
     ports:
       - "${SERVER_PORT:-7777}:7777"
     volumes:
       - ${CONTAINER_DIR}/data:/data
-    environment:
-      TZ: ${TZ}
     mem_limit: ${MEM_LIMIT:-4g}
     tty: true
     stdin_open: true
-    logging: *default-logging

@@ -1,0 +1,100 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-1m}"
+    max-file: "${LOG_MAX_FILES:-3}"
+
+x-common: &common
+  restart: ${RESTART_POLICY:-unless-stopped}
+  init: true
+  stop_grace_period: 30s
+  env_file:
+    - .env
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+x-affine-env: &affine-env
+  REDIS_SERVER_HOST: redis
+  DATABASE_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE}
+  DEPLOYMENT_TYPE: selfhosted
+  AFFINE_SERVER_EXTERNAL_URL: https://${VIRTUAL_HOST}
+  AFFINE_SERVER_HTTPS: "true"
+  AFFINE_SERVER_HOST: ${VIRTUAL_HOST}
+
+services:
+  affine:
+    <<: *common
+    image: ghcr.io/toeverything/affine:${AFFINE_REVISION:-stable}
+    container_name: ${SERVICE_NAME}-server
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      affine_migration:
+        condition: service_completed_successfully
+    environment:
+      <<: *affine-env
+    volumes:
+      - ${CONTAINER_DIR}/data/storage:/root/.affine/storage
+      - ${CONTAINER_DIR}/config:/root/.affine/config
+    networks:
+      - traefik
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      - traefik.http.routers.${SERVICE_NAME}.rule=Host(`${VIRTUAL_HOST}`)
+      - traefik.http.services.${SERVICE_NAME}.loadbalancer.server.port=3010
+
+  affine_migration:
+    <<: *common
+    restart: "no"
+    image: ghcr.io/toeverything/affine:${AFFINE_REVISION:-stable}
+    container_name: ${SERVICE_NAME}-migration
+    command: ["sh", "-c", "node ./scripts/self-host-predeploy.js"]
+    environment:
+      <<: *affine-env
+    volumes:
+      - ${CONTAINER_DIR}/data/storage:/root/.affine/storage
+      - ${CONTAINER_DIR}/config:/root/.affine/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  redis:
+    <<: *common
+    image: redis:7-alpine
+    container_name: ${SERVICE_NAME}-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  postgres:
+    <<: *common
+    image: pgvector/pgvector:pg16
+    container_name: ${SERVICE_NAME}-postgres
+    volumes:
+      - ${CONTAINER_DIR}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USERNAME}", "-d", "${DB_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+networks:
+  traefik:
+    external: true
+  internal:
+    internal: true
